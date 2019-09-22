@@ -2,6 +2,7 @@ import os
 import re
 import subprocess as sp
 import sys
+import shutil
 from functools import reduce
 from importlib import resources
 from pathlib import Path
@@ -83,11 +84,36 @@ def find_id_in_multi_index(ind: Index, id: int) -> Set[str]:
 
 @click.group()
 def cli():
-    pass
+    '''Markdown note is a tool to write notes in markdown, which can then be
+    viewed in a browser as html.
+    
+    All Notes are stored as plaintext files in the directory that you provide
+    as save-path in the configuration file ~/.mdnrc which will be automatically
+    created by your specification uppon first usage.
+    
+    All Notes must have a yaml front matter with a title and a group.
+    Think of a group as a notebook. Notes are identified by IDs therefore
+    titles can duplicate. Whenever a command requires an ID as argument you can
+    either use the id (which u can acquire via `mdn ls`, a title, which will be
+    used within a fuzzy search or one of '_c', '_e', '_s' which are synonyms
+    for the file that was last created, last edited or last shown respectively.
+    
+    All words that start with a @ within a note are considered tags and `mdn
+    ls` accepts a filter string allows to filter notes by a logical formula
+    describing whether tags should be existing or not, e.g.: "@foo & -@bar" 
+    which means the note must have the tag @foo but must not have the tag @bar.
+
+    Information about tags titles and groups are stored in index files. In case
+    the index diverges from the correct state (e.g. because the files were
+    modified outside of mdn) you can use `mdn regenerate` to recreate the index
+    files.
+    '''
 
 
 @cli.command()
 def regenerate():
+    '''recreates all index files.
+    This will parse all notes, and might take some time.'''
     print('Regenerate index, this may take some time...')
     for pf in [title_idx_path, tag_idx_path, group_idx_path]:
         unlink_if_existing(pf)
@@ -107,6 +133,7 @@ def regenerate():
 
 @cli.command()
 def new():
+    '''creates a new note'''
     save_path = Path(load_config().save_path)
     state = load_state()
     md_folder = save_path / 'md' 
@@ -128,6 +155,7 @@ def new():
 @cli.command()
 @click.argument('id', default='_c')
 def edit(id: str):
+    '''edit a note'''
     state = load_state()
     config = load_config()
     path, int_id = parse_id(id, Path(load_config().save_path), state, 
@@ -147,6 +175,7 @@ def edit(id: str):
 @cli.command()
 @click.argument('id', default='_e')
 def show(id: str):
+    '''Display the html version of a note'''
     state = load_state()
     config = load_config()
     path, int_id = parse_id(id, Path(load_config().save_path), state, 
@@ -167,6 +196,14 @@ def show(id: str):
 @click.option('--group', '-g', default=None)
 @click.option('--tags', '-t', default=None)
 def ls (pattern: str, group: str, tags: str):
+    '''Show a list of all existing notes.
+    Tags can be filtered according to logical formulas.
+    - is not, & is and and | is or. Nested paranthesis are supported.
+    Eg "@foo & -@bar" will show all notes that contain the @foo tag, but not
+    the @bar tag.
+    
+    If pattern is provided the list will be filtered by whether the pattern is
+    contained in the title. Casing is ignored'''
     files = list(Path(load_config().save_path, 'md').iterdir())
     title_index = load_title_index()
     title_lookup = {str(id): title 
@@ -185,10 +222,23 @@ def ls (pattern: str, group: str, tags: str):
     if tags:
         predicate = create_predicate_from_tag_str(tags.lower())
         rows = [row for row in rows if predicate(tags_lookup[row[0]])]
+    if pattern:
+        rows = [row for row in rows if pattern.lower() in row[1].lower()]
     print(tabulate(list(sorted(rows, key=lambda x: x[2], reverse=True)),
                    'id title group last_edit'.split()))
 
+
+@cli.command()
+@click.argument('target')
+@click.argument('save-path')
+def aa(target, save_path):
+    '''Add Asset
+    Coppies target to asset-folder/save-path'''
+    abs_save_path = Path(load_config().save_path, 'assets', save_path)
+    abs_save_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(target, abs_save_path)
    
+
 def make_html(md: str) -> str:
     lines = md.splitlines()
     content_start_line = lines[1:].index('---') + 2
@@ -330,6 +380,7 @@ def load_config() -> AttrDict:
     if config_path.exists():
         return AttrDict(yaml.safe_load(config_path.read_text()))
     config = query_config()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.dump(t.valmap(str, config)))
     return config
 
@@ -339,7 +390,7 @@ def query_config() -> AttrDict:
         'Where should your notes be stored?',
         '~/.mdn.d',
         lambda x: Path(x).expanduser(),
-        lambda x: not x.exists() and x.parent.exists(),
+        lambda x: True,
         'Input must be a Path to a non existing directory')
     editor_cmd = query_value(
         strip_lines('''

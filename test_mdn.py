@@ -14,9 +14,14 @@ def test_tag_parsing():
         create_predicate_from_tag_str('invalid')
     tags = {'@a', '@b', '@foo'}
     assert create_predicate_from_tag_str('@a')(tags)
-    assert create_predicate_from_tag_str('@foo; @bar')(tags)
-    assert not create_predicate_from_tag_str('@foo, @bar')(tags)
-    assert create_predicate_from_tag_str('(@foo, @bar) ; @b')(tags)
+    assert create_predicate_from_tag_str('@foo | @bar')(tags)
+    assert not create_predicate_from_tag_str('@foo & @bar')(tags)
+    assert create_predicate_from_tag_str('(@foo & @bar) | @b')(tags)
+    assert not create_predicate_from_tag_str('-@a')(tags)
+    assert create_predicate_from_tag_str('-@c')(tags)
+    assert not create_predicate_from_tag_str('-(@a | @bar)')(tags)
+    assert create_predicate_from_tag_str('-(@a & @bar)')(tags)
+    assert create_predicate_from_tag_str('-(@c | (@a & @d))')(tags)
 
 
 def test_remove_index():
