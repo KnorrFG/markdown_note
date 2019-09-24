@@ -235,7 +235,7 @@ def aa(target, save_path):
     '''Add Asset
     Coppies target to asset-folder/save-path'''
     abs_save_path = Path(load_config().save_path, 'assets', save_path)
-    abs_save_path.parent.mkdir(parents=True, exist_ok=True)
+    abs_save_path.parent.mkdir(755, True, True)
     shutil.copyfile(target, abs_save_path)
    
 
@@ -380,7 +380,7 @@ def load_config() -> AttrDict:
     if config_path.exists():
         return AttrDict(yaml.safe_load(config_path.read_text()))
     config = query_config()
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.parent.mkdir(755, True, True)
     config_path.write_text(yaml.dump(t.valmap(str, config)))
     return config
 
