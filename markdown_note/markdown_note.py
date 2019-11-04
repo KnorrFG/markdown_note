@@ -8,6 +8,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Callable, Dict, Set, Tuple
 from datetime import datetime
+import time
 
 import click
 from fuzzywuzzy import process
@@ -121,7 +122,9 @@ def regenerate():
     title_idx = {}
     group_idx = {}
     empty_set = set()
-    for file in tqdm(list(Path(load_config().save_path, 'md').iterdir())):
+    files = list(Path(load_config().save_path, 'md').iterdir())
+
+    for file in tqdm(files):
         title, tags, group = parse_file(file.read_text()) 
         id = int(file.stem)
         title_idx = insert_index_entry(title_idx, title, id)
@@ -130,6 +133,11 @@ def regenerate():
     store_group_index(group_idx)
     store_title_index(title_idx)
     store_tag_index(tag_idx)
+
+    t.thread_first(load_state(),
+        (t.assoc, 'next_index', 
+                  max(map(int, [f.stem for f in files])) + 1),
+        save_state)
 
 @cli.command()
 def new():
@@ -160,16 +168,19 @@ def edit(id: str):
     config = load_config()
     path, int_id = parse_id(id, Path(load_config().save_path), state, 
                             load_title_index())
+    html_path = get_html_path(int_id)
+    html_path.parent.mkdir(755, True, True)
+
+    def render_html(content):
+        html_path.write_text(make_html(content))
+
     assert_path_exists(path)
-    edit_externally(path, config)
+    edit_externally(path, config, render_html)
     save_state(t.assoc(state, 'last_edited', int_id))
     content = path.read_text()
     title, tags, group = parse_file(content)
     update_index_files_as_necessary(title, tags, group, int_id)
-    html_path = get_html_path(int_id)
-    html_path.parent.mkdir(755, True, True)
-    html_path.write_text(make_html(content))
-            
+    render_html(content) 
 
 
 @cli.command()
@@ -279,13 +290,21 @@ def update_index_files_as_necessary(title: str, tags: Set[str],
                                               old_group, id))
 
 
-def edit_externally(path: Path, config: AttrDict) -> None:
+def edit_externally(path: Path, config: AttrDict, render_html:
+                Callable[[str], None]) -> None:
+    last_edited = path.stat().st_mtime
     try:
-        sp.run(config.editor_cmd.format(path), shell=True, check=True)
+        edit_proc = sp.Popen(config.editor_cmd.format(path), shell=True)
     except sp.CalledProcessError as err:
         error(f' There was a problem with the editor command: {err}')
         assert False # mypy
     
+    while edit_proc.poll() is None:
+        time.sleep(1)
+        if new_last_edited := path.stat().st_mtime > last_edited:
+            render_html(path.read_text())
+            last_edited = new_last_edited
+
 
 def remove_index_entry(index: Index , entry: str, id: int) -> Index:
     try:
