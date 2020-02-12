@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Set, Tuple
 from datetime import datetime
 import time
+from typing import List
 
 import click
 from fuzzywuzzy import process
@@ -183,9 +184,7 @@ def edit(id: str):
     render_html(content) 
 
 
-@cli.command()
-@click.argument('id', default='_e')
-def show(id: str):
+def show_one(id: str):
     '''Display the html version of a note'''
     state = load_state()
     config = load_config()
@@ -200,6 +199,16 @@ def show(id: str):
         save_state(t.assoc(state, 'last_shown', int_id))
     except sp.CalledProcessError as err:
         error(f' There was a problem with the browser command: {err}')
+
+@cli.command()
+@click.argument('ids', nargs=-1)
+def show(ids: List[str]):
+    '''Display the html version of one or more notes note'''
+    if len(ids) == 0:
+        show_one('_e')
+    else:
+        for id in ids:
+            show_one(id)
 
 
 @cli.command()
@@ -235,7 +244,7 @@ def ls (pattern: str, group: str, tags: str):
         rows = [row for row in rows if predicate(tags_lookup[row[0]])]
     if pattern:
         rows = [row for row in rows if pattern.lower() in row[1].lower()]
-    print(tabulate(list(sorted(rows, key=lambda x: x[2], reverse=True)),
+    print(tabulate(list(sorted(rows, key=lambda x: x[3], reverse=True)),
                    'id title group last_edit'.split()))
 
 
