@@ -382,7 +382,8 @@ def edit_externally(path: Path, config: AttrDict, render_html:
     
     while edit_proc.poll() is None:
         time.sleep(1)
-        if new_last_edited := path.stat().st_mtime > last_edited:
+        new_last_edited = path.stat().st_mtime > last_edited
+        if new_last_edited:
             render_html(path.read_text())
             last_edited = new_last_edited
 
