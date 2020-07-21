@@ -1,7 +1,7 @@
 # Markdown Note
-Markdown note is a tool to write notes in markdown using your favorite text
-editor, which can then be viewed in a browser as html. The html also is
-rendered every time you save while editing the note
+Markdown note is a command line tool to write notes in markdown using your
+favorite text editor, which can then be viewed in a browser as html. The html
+also is rendered every time you save while editing the note
 
 All Notes are stored as plaintext files in the directory that you provide
 as save-path in the configuration file ~/.mdnrc which will be
@@ -22,6 +22,22 @@ Information about tags titles and groups are stored in index files. In
 case the index diverges from the correct state (e.g. because the files
 were modified outside of mdn) you can use `mdn regenerate` to recreate the
 index files.
+
+## Examples
+### Create a new note
+```
+mdn new
+```
+
+### Edit an existing note
+```
+mdn edit <fuzzy match pattern for the title or id>
+```
+
+### Show a note as html in a browser
+```
+mdn show <fuzzy match pattern for the title or id>
+```
 
 ## Commands
 ```
