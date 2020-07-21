@@ -6,7 +6,7 @@ import shutil
 from functools import reduce
 from importlib import resources
 from pathlib import Path
-from typing import Any, Callable, Dict, Set, Tuple
+from typing import Any, Callable, Dict, Set, Tuple, NamedTuple, Union
 from datetime import datetime
 import time
 from typing import List
@@ -224,28 +224,41 @@ def ls (pattern: str, group: str, tags: str):
     
     If pattern is provided the list will be filtered by whether the pattern is
     contained in the title. Casing is ignored'''
-    files = list(Path(load_config().save_path, 'md').iterdir())
-    title_index = load_title_index()
-    title_lookup = {str(id): title 
-                    for title, ids in title_index.items() for id in ids}
-    group_index = load_group_index()
-    group_lookup = {str(id): group 
-                    for group, ids in group_index.items() for id in ids}
-    tags_index = load_tag_index()
-    tags_lookup = {id: find_id_in_multi_index(tags_index, int(id)) 
-                   for id in (file.stem for file in files)}
-    rows = [(file.stem, title_lookup[file.stem], group_lookup[file.stem],
-             datetime.fromtimestamp(file.stat().st_mtime))
-            for file in files]
-    if group:
-        rows = [row for row in rows if group.lower() in row[2].lower()]
-    if tags:
-        predicate = create_predicate_from_tag_str(tags.lower())
-        rows = [row for row in rows if predicate(tags_lookup[row[0]])]
-    if pattern:
-        rows = [row for row in rows if pattern.lower() in row[1].lower()]
-    print(tabulate(list(sorted(rows, key=lambda x: x[3], reverse=True)),
+    rows = filter_files(pattern, group, tags)
+    print(tabulate(list(sorted(rows, key=lambda x: x.ts, reverse=True)),  # type: ignore
                    'id title group last_edit'.split()))
+
+
+@cli.command()
+@click.argument('pattern', default='')
+@click.option('--group', '-g', default=None)
+@click.option('--tags', '-t', default=None)
+def rm (pattern: str, group: str, tags: str):
+    '''Deletes selected files. Takes the same arguments as ls except for when
+    the pattern argument is numeric. Then its treated as an id.'''
+    group_index = load_group_index()
+    title_index = load_title_index()
+    tags_index = load_tag_index()
+    config = load_config()
+    if pattern.isnumeric():
+        ids = [pattern]
+    else:
+        rows = filter_files(pattern, group, tags, group_index, title_index,
+                        tags_index)
+        ids = [r.id for r in rows]
+
+    if len(ids) > 1 and not get_user_delete_confirmation(rows):
+        return
+
+    for id in ids:
+        ftitle, ftags, fgroup = parse_file(md_path(id, config).read_text())
+        delete_md(id, config)
+        html_path(id, config).unlink()
+        store_group_index(remove_index_entry(group_index, fgroup, id))
+        store_title_index(remove_index_entry(title_index, ftitle, id))
+        for tag in ftags:
+            tags_index = remove_index_entry(tags_index, tag, id)
+        store_tag_index(tags_index)
 
 
 @cli.command()
@@ -277,6 +290,65 @@ def make_html(md: str) -> str:
         with tag('body'):
             doc.asis(md_code)
     return doc.getvalue()
+
+
+class Row(NamedTuple):
+    id: str
+    title: str
+    group: str
+    ts: datetime
+
+
+def filter_files(pattern:str, group: str, tags: str, 
+                 group_index: Index = None,
+                 title_index: Index = None,
+                 tags_index: Index = None) -> List[Row]:
+    files = list(Path(load_config().save_path, 'md').iterdir())
+    title_index = title_index or load_title_index()
+    title_lookup = {str(id): title 
+                    for title, ids in title_index.items() for id in ids}
+    group_index = group_index or load_group_index()
+    group_lookup = {str(id): group 
+                    for group, ids in group_index.items() for id in ids}
+    tags_index = tags_index or load_tag_index()
+    tags_lookup = {id: find_id_in_multi_index(tags_index, int(id)) 
+                   for id in (file.stem for file in files)}
+    rows = [Row(file.stem, title_lookup[file.stem], group_lookup[file.stem],
+             datetime.fromtimestamp(file.stat().st_mtime))
+            for file in files]
+    if group:
+        rows = [row for row in rows if group.lower() in row[2].lower()]
+    if tags:
+        predicate = create_predicate_from_tag_str(tags.lower())
+        rows = [row for row in rows if predicate(tags_lookup[row[0]])]
+    if pattern:
+        rows = [row for row in rows if pattern.lower() in row[1].lower()]
+    return rows
+
+
+def get_user_delete_confirmation(rows):
+    print("Do you really wanna delete the following files?\n")
+    print(tabulate(list(sorted(rows, key=lambda x: x[3], reverse=True)),
+                   'id title group last_edit'.split()))
+    print()
+    return query_value("Delete? y/n: ", None, t.identity, 
+                       lambda x: x in "yn", "") == 'y'
+
+
+def md_path(id, config):
+    return Path(config.save_path, 'md', id + '.md')
+
+
+def html_path(id, config):
+    return Path(config.save_path, 'html', id + '.html')
+
+
+def delete_md(id: str, config: AttrDict):
+    file = md_path(id, config)
+    if not file.exists():
+        error("""The File thats supposed to be deleted does not seem to exist.
+                 Please run 'mdn regenerate' and try again""")
+    file.unlink()
 
 
 def update_index_files_as_necessary(title: str, tags: Set[str], 
@@ -315,7 +387,7 @@ def edit_externally(path: Path, config: AttrDict, render_html:
             last_edited = new_last_edited
 
 
-def remove_index_entry(index: Index , entry: str, id: int) -> Index:
+def remove_index_entry(index: Index , entry: str, id: Union[int, str]) -> Index:
     try:
         if len(index[entry]) == 1:
             return t.dissoc(index, entry)
@@ -351,6 +423,7 @@ def update_multi_index(index: Index, new: Set[str], old: Set[str], id: int)\
     return reduce(t.partial(remove_index_entry, id=id), 
                   removed_tags, index_with_new_tags)
 
+
 def parse_file(content: str) -> Tuple[str, Set[str], str]:
     lines = content.splitlines()
     if not lines[0] == '---' and lines[1:].count('---') == 1:
@@ -367,11 +440,13 @@ def parse_file(content: str) -> Tuple[str, Set[str], str]:
                        (set))
     return front_matter.title, tags, front_matter.group
 
+
 def assert_front_matter_correct(front_matter: str):
     if not (hasattr(front_matter, 'title')
             and hasattr(front_matter, 'group')):
         error('''The front_matter must contain a title field
               and a group field''')
+
 
 def assert_path_exists(p: Path):
     if not p.exists():
@@ -448,7 +523,9 @@ def query_value(msg: str, default: str, transform: Callable,
                 check: Callable[[Any], bool], error_msg: str) -> Any:
     while True:
         try:
-            inp = transform(input(msg + f' [{default}]: ') or default)
+            inp = transform(input((msg + f' [{default}]: ') 
+                                  if default is not None else msg) 
+                            or default)
             if check(inp):
                 return inp
             print(error_msg, file=sys.stderr)
