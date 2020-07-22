@@ -42,6 +42,7 @@ mdn show <fuzzy match pattern for the title or id>
 ## Commands
 ```
 aa          Add Asset. Coppies target to asset-folder/save-path
+cat         Prints the notes source to stdout.
 edit        edit a note
 ls          Show a list of all existing notes.
 new         creates a new note
