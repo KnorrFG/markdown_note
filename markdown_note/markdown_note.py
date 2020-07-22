@@ -169,11 +169,11 @@ def edit(id: str):
     config = load_config()
     path, int_id = parse_id(id, Path(load_config().save_path), state, 
                             load_title_index())
-    html_path = get_html_path(int_id)
-    html_path.parent.mkdir(755, True, True)
+    htmlpath = html_path(int_id, config)
+    htmlpath.parent.mkdir(755, True, True)
 
     def render_html(content):
-        html_path.write_text(make_html(content))
+        htmlpath.write_text(make_html(content))
 
     assert_path_exists(path)
     edit_externally(path, config, render_html)
@@ -191,11 +191,11 @@ def show_one(id: str):
     path, int_id = parse_id(id, Path(load_config().save_path), state, 
                             load_title_index())
     
-    html_path = get_html_path(int_id)
-    if html_path.stat().st_mtime < path.stat().st_mtime:
-        html_path.write_text(make_html(path.read_text()))
+    htmlpath = html_path(int_id, config)
+    if htmlpath.stat().st_mtime < path.stat().st_mtime:
+        htmlpath.write_text(make_html(path.read_text()))
     try:
-        sp.Popen(config.browser_cmd.format(html_path), shell=True)
+        sp.Popen(config.browser_cmd.format(htmlpath), shell=True)
         save_state(t.assoc(state, 'last_shown', int_id))
     except sp.CalledProcessError as err:
         error(f' There was a problem with the browser command: {err}')
@@ -272,6 +272,20 @@ def aa(target, save_path):
     shutil.copyfile(target, abs_save_path)
    
 
+@cli.command()
+@click.argument('id', default='_c')
+@click.option('--no-header', '-n', is_flag=True)
+def cat(id: str, no_header: bool):
+    """Prints the notes source to stdout. Use -n to hide the yaml header"""
+    state = load_state()
+    config = load_config()
+    path, int_id = parse_id(id, Path(load_config().save_path), state, 
+                            load_title_index())
+    content = path.read_text().splitlines()
+    h_end = 1 + content[1:].index('---')
+    print("\n".join(content[h_end + 1:] if no_header else content).strip())
+
+
 def make_html(md: str) -> str:
     lines = md.splitlines()
     content_start_line = lines[1:].index('---') + 2
@@ -336,11 +350,11 @@ def get_user_delete_confirmation(rows):
 
 
 def md_path(id, config):
-    return Path(config.save_path, 'md', id + '.md')
+    return Path(config.save_path, 'md', f'{id}.md')
 
 
 def html_path(id, config):
-    return Path(config.save_path, 'html', id + '.html')
+    return Path(config.save_path, 'html', f'{id}.html')
 
 
 def delete_md(id: str, config: AttrDict):
@@ -550,10 +564,6 @@ def load(pf: PathFunc, default: Callable[[], Any] = AttrDict)\
 @t.curry
 def store(pf: PathFunc, index: Index) -> None:
     pf().write_text(yaml.dump(dict(index)))
-
-
-def get_html_path(id: int) -> Path:
-    return Path(load_config().save_path, 'html', f'{id}.html')
 
 
 title_idx_path = make_path_func('title_index')
