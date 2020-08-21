@@ -49,6 +49,7 @@ special_id_mappings = {
 }
 
 tag_pattern = re.compile(r'\B(@\w+)')
+link_pattern = re.compile(r"!?\[.*\]\((.*)\)")
 
 
 def error(msg: str):
@@ -85,7 +86,8 @@ def find_id_in_multi_index(ind: Index, id: int) -> Set[str]:
                     
 
 @click.group()
-def cli():
+@click.option("--config-file-path", "-c", type=Path, default=None)
+def cli(config_file_path: Path):
     '''Markdown note is a tool to write notes in markdown, which can then be
     viewed in a browser as html.
     
@@ -110,6 +112,10 @@ def cli():
     modified outside of mdn) you can use `mdn regenerate` to recreate the index
     files.
     '''
+    if config_file_path is not None:
+        global config_path
+        config_path = config_file_path
+    
 
 
 @cli.command()
@@ -141,7 +147,8 @@ def regenerate():
         save_state)
 
 @cli.command()
-def new():
+@click.option('--template', '-t', default=None, type=Path)
+def new(template: Path):
     '''creates a new note'''
     save_path = Path(load_config().save_path)
     state = load_state()
@@ -149,7 +156,8 @@ def new():
     md_folder.mkdir(755, True, True)
     new_file_path =  md_folder / f'{state.next_index}.md'
     assert_new_file_does_not_exist(new_file_path)
-    new_file_path.write_text(new_md_template)
+    template = template.read_text() if template else new_md_template
+    new_file_path.write_text(template)
     t.thread_first(state,
         (t.assoc, 'next_index', state.next_index + 1),
         (t.assoc, 'last_created', state.next_index),
@@ -158,7 +166,7 @@ def new():
                       'None', state.next_index))
     store_title_index(insert_index_entry(load_title_index(), 
                       'None', state.next_index))
-    sp.run('mdn edit', shell=True)
+    sp.run(f'mdn -c {config_path} edit', shell=True)
 
 
 @cli.command()
@@ -253,7 +261,9 @@ def rm (pattern: str, group: str, tags: str):
     for id in ids:
         ftitle, ftags, fgroup = parse_file(md_path(id, config).read_text())
         delete_md(id, config)
-        html_path(id, config).unlink()
+        htmlp = html_path(id, config)
+        if htmlp.exists():
+            htmlp.unlink()
         store_group_index(remove_index_entry(group_index, fgroup, id))
         store_title_index(remove_index_entry(title_index, ftitle, id))
         for tag in ftags:
@@ -273,9 +283,18 @@ def aa(target, save_path):
    
 
 @cli.command()
-@click.argument('id', default='_c')
+@click.argument('ids', nargs=-1)
 @click.option('--no-header', '-n', is_flag=True)
-def cat(id: str, no_header: bool):
+def cat(ids: List[str], no_header: bool):
+    '''Display the html version of one or more notes note'''
+    if len(ids) == 0:
+        cat_one('_e', no_header)
+    else:
+        for id in ids:
+            cat_one(id, no_header)
+
+
+def cat_one(id: str, no_header: bool):
     """Prints the notes source to stdout. Use -n to hide the yaml header"""
     state = load_state()
     config = load_config()
@@ -283,7 +302,27 @@ def cat(id: str, no_header: bool):
                             load_title_index())
     content = path.read_text().splitlines()
     h_end = 1 + content[1:].index('---')
-    print("\n".join(content[h_end + 1:] if no_header else content).strip())
+    content = ("\n".join(content[h_end + 1:] if no_header else
+        content).strip())
+    print()
+    print(adjust_links(content))
+
+
+def adjust_links(s: str):
+    matches = list(link_pattern.finditer(s))
+    if len(matches) == 0:
+        return s
+
+    abs_save_paths = [Path(load_config().save_path, 'assets', m.group(1)) 
+                      for m in matches]
+
+    first_segment = s[:matches[0].start(1)]
+    segments = [s[m1.end(1):m2.start(1)] for m1, m2 in t.partition(2, matches)]
+    last_segment = s[matches[-1].end(1):]
+    return "".join(t.interleave([[first_segment] + segments, 
+                                  map(str, abs_save_paths)])) + last_segment
+        
+    
 
 
 def make_html(md: str) -> str:
