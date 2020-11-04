@@ -238,6 +238,12 @@ def ls (pattern: str, group: str, tags: str):
 
 
 @cli.command()
+def lsg():
+    '''Shows a list of all existing groups'''
+    print(*t.unique(load_group_index()))
+
+
+@cli.command()
 @click.argument('pattern', default='')
 @click.option('--group', '-g', default=None)
 @click.option('--tags', '-t', default=None)
@@ -331,7 +337,7 @@ def make_html(md: str) -> str:
     title = yaml.safe_load('\n'.join(lines[1:content_start_line - 1]))\
                 .get('title')
     md_code = markdown.markdown('\n'.join(lines[content_start_line:]), 
-                                extensions=['extra'])
+                                extensions=['extra', 'toc'])
     doc, tag, text, line = Doc().ttl()
     doc.asis('<!DOCTYPE html>')
     with tag('html'):
