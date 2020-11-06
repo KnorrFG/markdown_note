@@ -300,6 +300,14 @@ def cat(ids: List[str], no_header: bool):
             cat_one(id, no_header)
 
 
+@cli.command()
+def pmd():
+    '''Prints the path of the directory where the md files are stored.
+
+    Intended usage: cd `mdn pmd` '''
+    print(str(Path(load_config().save_path, 'md')))
+
+
 def cat_one(id: str, no_header: bool):
     """Prints the notes source to stdout. Use -n to hide the yaml header"""
     state = load_state()
