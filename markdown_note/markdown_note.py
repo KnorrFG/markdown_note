@@ -12,7 +12,6 @@ import time
 from typing import List
 
 import click
-from fuzzywuzzy import process
 import markdown
 import toolz as t
 import yaml
@@ -381,7 +380,8 @@ def filter_files(pattern:str, group: str, tags: str,
     tags_lookup = {id: find_id_in_multi_index(tags_index, int(id)) 
                    for id in (file.stem for file in files)}
     rows = [Row(file.stem, title_lookup[file.stem], group_lookup[file.stem],
-             datetime.fromtimestamp(file.stat().st_mtime))
+             datetime.fromtimestamp(file.stat().st_mtime)
+                     .replace(microsecond=0))
             for file in files]
     if group:
         rows = [row for row in rows if group.lower() in row[2].lower()]
@@ -527,14 +527,22 @@ def assert_path_exists(p: Path):
 
 def parse_id(id: str, save_path: Path, state: AttrDict, 
              title_index: Index) -> Tuple[Path, int]:
+    config = load_config()
     maybe_int = try_cast(int, id)
     if maybe_int is not None:
         int_id = maybe_int 
     elif id in special_id_mappings:
         int_id = state[special_id_mappings[id]]
     else:
-        match = process.extractOne(id, title_index.keys())[0]
-        int_id = t.first(title_index[match])
+        pattern = re.compile(".*".join(id), re.I)
+        candidates = list(t.concat([ids for name, ids in title_index.items() 
+                                    if pattern.search(name)]))
+        if len(candidates) == 0:
+            print("No matching notes found", file=sys.stderr)
+            exit(1)
+        mod_date_pairs = [(md_path(id, config).stat().st_mtime, id) 
+                          for id in candidates]
+        int_id = max(mod_date_pairs)[1]
     return save_path / 'md' / f'{int_id}.md', int_id
 
 
