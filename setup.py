@@ -22,3 +22,4 @@ setup(name='Markdown Note',
 #   remove ns from timestamps
 #   there is probably some documentation missing
 #   Increased version to 0.3, i guess i could be more consequent
+#   cat supports ls args now

@@ -288,10 +288,18 @@ def aa(target, save_path):
    
 
 @cli.command()
-@click.argument('ids', nargs=-1)
+@click.argument('pattern', default='')
+@click.option('--group', '-g', default=None)
+@click.option('--tags', '-t', default=None)
 @click.option('--no-header', '-n', is_flag=True)
-def cat(ids: List[str], no_header: bool):
+def cat(pattern: str, group: str, tags: str, no_header: bool):
     '''Display the html version of one or more notes note'''
+    if pattern.isnumeric():
+        ids = [pattern]
+    else:
+        rows = filter_files(pattern, group, tags)
+        ids = [row.id for row in rows]
+
     if len(ids) == 0:
         cat_one('_e', no_header)
     else:
@@ -330,7 +338,8 @@ def adjust_links(s: str):
                       for m in matches]
 
     first_segment = s[:matches[0].start(1)]
-    segments = [s[m1.end(1):m2.start(1)] for m1, m2 in t.partition(2, matches)]
+    segments = [s[m1.end(1):m2.start(1)] 
+            for m1, m2 in t.sliding_window(2, matches)]
     last_segment = s[matches[-1].end(1):]
     return "".join(t.interleave([[first_segment] + segments, 
                                   map(str, abs_save_paths)])) + last_segment
