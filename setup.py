@@ -1,5 +1,4 @@
 from distutils.core import setup
-import sys
 
 packages = ['markdown_note', 'markdown_note.resources']
 install_requires = ["markdown", "pyyaml", "toolz", "yattag", "click", "attrdict",

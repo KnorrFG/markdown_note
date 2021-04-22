@@ -9,6 +9,13 @@ or_symbol = '|'
 Not = 2
 not_symbol = '-'
 
+
+class ParserError(RuntimeError):
+    def __init__(self, msg, reason):
+        super().__init__(msg + reason)
+        self.reason = reason
+
+
 @dataclass
 class Tag:
     name: str
@@ -83,7 +90,7 @@ def _digest(s: str) -> Tuple[Any, str]:
     elif s[0] == not_symbol:
         return Not, s[1:]
     else:
-        raise ValueError('Error parsing tag strin at: ' + s)
+        raise ParserError('Error parsing tag strin at: ', s)
 
 
 def _get_object_repr(objs: List[Any], s: str) -> List[Any]:

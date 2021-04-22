@@ -21,7 +21,7 @@ from yattag import Doc
 from tabulate import tabulate
 
 from . import resources as res
-from .tag_string_parser import create_predicate_from_tag_str
+from .tag_string_parser import create_predicate_from_tag_str, ParserError
 
 Index = Dict[str, Set[int]]
 PathFunc =  Callable[[], Path]
@@ -239,26 +239,49 @@ def ls (pattern: str, group: str, tags: str):
 @cli.command()
 def lsg():
     '''Shows a list of all existing groups'''
-    print(*t.unique(load_group_index()))
+    print("\t".join([f"'{x}'" if " " in x else x
+            for x in t.unique(load_group_index())]))
 
 
 @cli.command()
-@click.argument('pattern', default='')
+def lst():
+    '''Shows a list of all existing tags'''
+    print("\t".join([f"'{x}'" if " " in x else x
+            for x in t.unique(load_tag_index())]))
+
+
+@cli.command()
+@click.argument('pattern', nargs=-1)
 @click.option('--group', '-g', default=None)
 @click.option('--tags', '-t', default=None)
-def rm (pattern: str, group: str, tags: str):
+def rm(pattern: List[str], group: str, tags: str):
     '''Deletes selected files. Takes the same arguments as ls except for when
     the pattern argument is numeric. Then its treated as an id.'''
     group_index = load_group_index()
     title_index = load_title_index()
     tags_index = load_tag_index()
     config = load_config()
-    if pattern.isnumeric():
-        ids = [pattern]
+
+    if len(pattern) == 0:
+        pattern = ['']
+
+    if len(pattern) == 1:
+        if pattern[0].isnumeric():
+            ids = pattern
+        else:
+            rows = filter_files(pattern[0], group, tags, group_index, 
+                                title_index, tags_index)
+            ids = [r.id for r in rows]
     else:
-        rows = filter_files(pattern, group, tags, group_index, title_index,
-                        tags_index)
-        ids = [r.id for r in rows]
+        state = load_state()
+        ids = []
+        for pat in pattern:
+            path, int_id = parse_id(pat, Path(config.save_path), 
+                                    state, title_index)
+            ids.append(int_id)
+        rows = [id_to_row(id, config, group_index, title_index)
+                for id in ids]
+
 
     if len(ids) > 1 and not get_user_delete_confirmation(rows):
         return
@@ -288,23 +311,32 @@ def aa(target, save_path):
    
 
 @cli.command()
-@click.argument('pattern', default='')
+@click.argument('pattern', nargs=-1)
 @click.option('--group', '-g', default=None)
 @click.option('--tags', '-t', default=None)
 @click.option('--no-header', '-n', is_flag=True)
 def cat(pattern: str, group: str, tags: str, no_header: bool):
-    '''Display the html version of one or more notes note'''
-    if pattern.isnumeric():
-        ids = [pattern]
+    '''Display the md version of one or more notes note'''
+    if len(pattern) == 0:
+        pattern = ["_e"]
+    if len(pattern) == 1:
+        if pattern[0].isnumeric():
+            ids = pattern
+        else:
+            rows = filter_files(pattern[0], group, tags)
+            ids = [row.id for row in rows]
     else:
-        rows = filter_files(pattern, group, tags)
-        ids = [row.id for row in rows]
+        ids = []
+        config = load_config()
+        state = load_state()
+        title_index = load_title_index()
+        for pat in pattern:
+            path, int_id = parse_id(pat, Path(config.save_path), 
+                                    state, title_index)
+            ids.append(int_id)
 
-    if len(ids) == 0:
-        cat_one('_e', no_header)
-    else:
-        for id in ids:
-            cat_one(id, no_header)
+    for id in ids:
+        cat_one(id, no_header)
 
 
 @cli.command()
@@ -318,7 +350,7 @@ def pmd():
 def cat_one(id: str, no_header: bool):
     """Prints the notes source to stdout. Use -n to hide the yaml header"""
     state = load_state()
-    config = load_config()
+    # config = load_config()
     path, int_id = parse_id(id, Path(load_config().save_path), state, 
                             load_title_index())
     content = path.read_text().splitlines()
@@ -327,6 +359,17 @@ def cat_one(id: str, no_header: bool):
         content).strip())
     print()
     print(adjust_links(content))
+
+
+def id_to_row(id, config, group_index, title_index):
+    file = Path(config.save_path) / "md" / f"{id}.md"
+    title_lookup = {id: title 
+                    for title, ids in title_index.items() for id in ids}
+    group_lookup = {id: group 
+                    for group, ids in group_index.items() for id in ids}
+    return Row(file.stem, title_lookup[id], group_lookup[id],
+            datetime.fromtimestamp(file.stat().st_mtime)
+            .replace(microsecond=0))
 
 
 def adjust_links(s: str):
@@ -395,10 +438,15 @@ def filter_files(pattern:str, group: str, tags: str,
     if group:
         rows = [row for row in rows if group.lower() in row[2].lower()]
     if tags:
-        predicate = create_predicate_from_tag_str(tags.lower())
+        try:
+            predicate = create_predicate_from_tag_str(tags.lower())
+        except ParserError as e:
+            error(f"Couldnt parse the tag string. Problematic bit: {e.reason}"
+                    "\nMaybe you missed an @?")
         rows = [row for row in rows if predicate(tags_lookup[row[0]])]
     if pattern:
-        rows = [row for row in rows if pattern.lower() in row[1].lower()]
+        pattern = re.compile(".*".join(pattern), re.I)
+        rows = [row for row in rows if pattern.search(row[1])]
     return rows
 
 
