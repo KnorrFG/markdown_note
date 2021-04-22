@@ -347,6 +347,57 @@ def pmd():
     print(str(Path(load_config().save_path, 'md')))
 
 
+
+@cli.command()
+@click.argument("pattern")
+@click.option("--regex", "-r", is_flag=True)
+@click.option("--no-wildcard", "-n", is_flag=True)
+def fd(pattern: str, regex: bool, no_wildcard: bool):
+    """Searches through the content of all Notes. Treats * as wildcard"""
+    if regex:
+        pattern = re.compile(pattern)
+    elif no_wildcard:
+        pattern = re.compile(re.escape(pattern), re.IGNORECASE)
+    else:
+        elems = pattern.split("*")
+        pattern = ".*".join(re.escape(elem) for elem in elems)
+        pattern = re.compile(pattern, re.IGNORECASE)
+
+    config = load_config()
+    files = (Path(config.save_path) / "md").iterdir()
+    results = {file.stem: hits for file in files
+            if (hits := get_hits(pattern, file.read_text()))}
+    title_lookup = {str(id): title 
+                    for title, ids in load_title_index().items() for id in ids}
+    for (id, hits) in results.items():
+        print(f"{id}: {title_lookup[id]}")
+        for hit in hits:
+            print("\t", hit)
+
+
+def get_hits(pattern: re.Pattern, body: str, context_len: int = 15):
+    """Applies search, and returns a string for every match with some
+    additional context"""
+    matches = pattern.finditer(body)
+    res = []
+    for match in matches:
+        if match is None:
+            continue
+        start = max(0, match.start() - context_len)
+        end = min(len(body), match.end() + context_len)
+        hit = body[start: end].replace("\n", " ")
+        first_space = hit.find(" ")
+        if first_space > context_len:
+            first_space = -1
+        last_space = hit.rfind(" ")
+        if last_space <= len(hit) - context_len:
+            last_space = len(hit)
+        last_space = min(70, last_space)
+        hit = hit[first_space + 1: last_space]
+        res.append(f"... {hit} ...")
+    return res
+
+
 def cat_one(id: str, no_header: bool):
     """Prints the notes source to stdout. Use -n to hide the yaml header"""
     state = load_state()
