@@ -49,6 +49,7 @@ special_id_mappings = {
 
 tag_pattern = re.compile(r'\B(@\w+)')
 link_pattern = re.compile(r"!?\[.*\]\((.*)\)")
+md_file_pattern = re.compile(r"\d+\.md")
 
 
 def error(msg: str):
@@ -468,11 +469,18 @@ class Row(NamedTuple):
     ts: datetime
 
 
+def assert_all_files_valid(files: List[Path]):
+    for f in files:
+        if md_file_pattern.match(f.name) is None:
+            error(f"Found an invalid file in the md folder: {f.name}")
+
+
 def filter_files(pattern:str, group: str, tags: str, 
                  group_index: Index = None,
                  title_index: Index = None,
                  tags_index: Index = None) -> List[Row]:
     files = list(Path(load_config().save_path, 'md').iterdir())
+    assert_all_files_valid(files)
     title_index = title_index or load_title_index()
     title_lookup = {str(id): title 
                     for title, ids in title_index.items() for id in ids}
