@@ -1,16 +1,14 @@
 import pytest
 
-from markdown_note.markdown_note import (
-    remove_index_entry, 
-    insert_index_entry,
-    update_multi_index,
-    parse_file, 
-    strip_lines)
-from markdown_note.tag_string_parser import create_predicate_from_tag_str
+from markdown_note.markdown_note import (insert_index_entry, parse_file,
+                                         remove_index_entry, strip_lines,
+                                         update_multi_index)
+from markdown_note.tag_string_parser import (ParserError,
+                                             create_predicate_from_tag_str)
 
 
 def test_tag_parsing():
-    with pytest.raises(ValueError):
+    with pytest.raises(ParserError):
         create_predicate_from_tag_str('invalid')
     tags = {'@a', '@b', '@foo'}
     assert create_predicate_from_tag_str('@a')(tags)
@@ -64,7 +62,8 @@ def test_parse_file():
         This is a @Baz note. It's the the most @baz like note ever.
         Its a little @bar too.
         ''')
-    title, tags, group = parse_file(content)
+    title, tags, group, doi = parse_file(content)
     assert title == 'Test Note'
     assert tags == {'@baz', '@bar'}
     assert group == 'foo'
+    assert doi == None

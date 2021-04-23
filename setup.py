@@ -2,7 +2,7 @@ from distutils.core import setup
 
 packages = ['markdown_note', 'markdown_note.resources']
 install_requires = ["markdown", "pyyaml", "toolz", "yattag", "click", "attrdict",
-                    "tqdm", 'tabulate']
+                    "tqdm", 'tabulate', 'habanero']
 
 setup(name='Markdown Note',
       version='0.3',

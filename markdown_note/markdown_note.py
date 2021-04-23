@@ -1,27 +1,30 @@
 import os
+import pickle
 import re
+import shutil
 import subprocess as sp
 import sys
-import shutil
-from functools import reduce
+import time
+from datetime import datetime
+from functools import lru_cache, reduce
 from importlib import resources
 from pathlib import Path
-from typing import Any, Callable, Dict, Set, Tuple, NamedTuple, Union
-from datetime import datetime
-import time
-from typing import List
+from typing import Any, Callable, Dict, List, NamedTuple, Set, Tuple, Union
 
 import click
 import markdown
 import toolz as t
 import yaml
 from attrdict import AttrDict
+from habanero import cn
+from tabulate import tabulate
 from tqdm import tqdm
 from yattag import Doc
-from tabulate import tabulate
 
 from . import resources as res
-from .tag_string_parser import create_predicate_from_tag_str, ParserError
+from .tag_string_parser import ParserError, create_predicate_from_tag_str
+
+lmap = t.compose(list, t.map)
 
 Index = Dict[str, Set[int]]
 PathFunc =  Callable[[], Path]
@@ -77,8 +80,11 @@ def unlink_if_existing(pf: PathFunc):
 
 
 def find_id_in_single_index(ind: Index, id: int) -> str:
-    return t.first(key for key, value in ind.items() 
-                   if id in value)
+    try:
+        return t.first(key for key, value in ind.items() 
+                       if id in value)
+    except StopIteration:
+        return None
 
 
 def find_id_in_multi_index(ind: Index, id: int) -> Set[str]:
@@ -117,7 +123,6 @@ def cli(config_file_path: Path):
         config_path = config_file_path
     
 
-
 @cli.command()
 def regenerate():
     '''recreates all index files.
@@ -128,18 +133,22 @@ def regenerate():
     tag_idx = {}
     title_idx = {}
     group_idx = {}
+    doi_idx = {}
     empty_set = set()
     files = list(Path(load_config().save_path, 'md').iterdir())
 
     for file in tqdm(files):
-        title, tags, group = parse_file(file.read_text()) 
+        title, tags, group, doi = parse_file(file.read_text()) 
         id = int(file.stem)
         title_idx = insert_index_entry(title_idx, title, id)
         tag_idx = update_multi_index(tag_idx, tags, empty_set, id)
         group_idx = insert_index_entry(group_idx, group, id)
+        if doi is not None:
+            doi_idx = insert_index_entry(doi_idx, doi, id)
     store_group_index(group_idx)
     store_title_index(title_idx)
     store_tag_index(tag_idx)
+    store_doi_index(doi_idx)
 
     t.thread_first(load_state(),
         (t.assoc, 'next_index', 
@@ -187,8 +196,8 @@ def edit(id: str):
     edit_externally(path, config, render_html)
     save_state(t.assoc(state, 'last_edited', int_id))
     content = path.read_text()
-    title, tags, group = parse_file(content)
-    update_index_files_as_necessary(title, tags, group, int_id)
+    title, tags, group, doi = parse_file(content)
+    update_index_files_as_necessary(title, tags, group, int_id, doi)
     render_html(content) 
 
 
@@ -233,8 +242,7 @@ def ls (pattern: str, group: str, tags: str):
     If pattern is provided the list will be filtered by whether the pattern is
     contained in the title. Casing is ignored'''
     rows = filter_files(pattern, group, tags)
-    print(tabulate(list(sorted(rows, key=lambda x: x.ts, reverse=True)),  # type: ignore
-                   'id title group last_edit'.split()))
+    print_table(rows)
 
 
 @cli.command()
@@ -261,40 +269,27 @@ def rm(pattern: List[str], group: str, tags: str):
     group_index = load_group_index()
     title_index = load_title_index()
     tags_index = load_tag_index()
+    doi_index = load_doi_index()
     config = load_config()
 
-    if len(pattern) == 0:
-        pattern = ['']
-
-    if len(pattern) == 1:
-        if pattern[0].isnumeric():
-            ids = pattern
-        else:
-            rows = filter_files(pattern[0], group, tags, group_index, 
-                                title_index, tags_index)
-            ids = [r.id for r in rows]
-    else:
-        state = load_state()
-        ids = []
-        for pat in pattern:
-            path, int_id = parse_id(pat, Path(config.save_path), 
-                                    state, title_index)
-            ids.append(int_id)
-        rows = [id_to_row(id, config, group_index, title_index)
-                for id in ids]
-
+    ids = multipattern_to_ids(pattern, group, tags, config, None, 
+            group_index, title_index, tags_index)
+    rows = [id_to_row(int(id), config, group_index, title_index)
+            for id in ids]
 
     if len(ids) > 1 and not get_user_delete_confirmation(rows):
         return
 
     for id in ids:
-        ftitle, ftags, fgroup = parse_file(md_path(id, config).read_text())
+        ftitle, ftags, fgroup, doi = parse_file(md_path(id, config).read_text())
         delete_md(id, config)
         htmlp = html_path(id, config)
         if htmlp.exists():
             htmlp.unlink()
         store_group_index(remove_index_entry(group_index, fgroup, id))
         store_title_index(remove_index_entry(title_index, ftitle, id))
+        if doi is not None:
+            store_doi_index(remove_index_entry(doi_index, doi, id))
         for tag in ftags:
             tags_index = remove_index_entry(tags_index, tag, id)
         store_tag_index(tags_index)
@@ -318,26 +313,63 @@ def aa(target, save_path):
 @click.option('--no-header', '-n', is_flag=True)
 def cat(pattern: str, group: str, tags: str, no_header: bool):
     '''Display the md version of one or more notes note'''
-    if len(pattern) == 0:
-        pattern = ["_e"]
-    if len(pattern) == 1:
-        if pattern[0].isnumeric():
-            ids = pattern
-        else:
-            rows = filter_files(pattern[0], group, tags)
-            ids = [row.id for row in rows]
-    else:
-        ids = []
-        config = load_config()
-        state = load_state()
-        title_index = load_title_index()
-        for pat in pattern:
-            path, int_id = parse_id(pat, Path(config.save_path), 
-                                    state, title_index)
-            ids.append(int_id)
-
+    ids = multipattern_to_ids(pattern, group, tags)
     for id in ids:
         cat_one(id, no_header)
+
+
+@cli.command()
+@click.argument('pattern', nargs=-1)
+@click.option('--bib-file', '-b', default=None)
+@click.option('--group', '-g', default=None)
+@click.option('--tags', '-t', default=None)
+@click.option('--reload', '-r', is_flag=True, 
+        help="dont use the cached entry")
+def tobib(pattern: str, bib_file: str, group: str, tags: str, reload: bool):
+    """Adds bibtex entries for the given notes to a bibtex
+    file. If no bibtex file is specified, the first in the current working
+    directory is used."""
+    bib_path = get_bib_path(bib_file)
+    if bib_path is None:
+        error("Couldnt open bib-file. Try specifying one with -b")
+
+    doi_index = load_doi_index()
+    group_index = load_group_index()
+    title_index = load_title_index()
+    tags_index = load_tag_index()
+    config = load_config()
+    ids = multipattern_to_ids(pattern, group, tags, config, None, group_index, 
+                              title_index, tags_index)
+
+    doi_lookup = {str(id): doi 
+                  for doi, _ids in doi_index.items() for id in _ids}
+    removed_ids, remaining_ids = [], []
+    for id in ids:
+        if id in doi_lookup:
+            remaining_ids.append(id)
+        else:
+            removed_ids.append(id)
+
+    if len(removed_ids) > 0:
+        print("Warning: the following notes were part of the query, but dont "
+              "contain a doi and were ignored:")
+        removed_rows = [id_to_row(int(id), config, group_index, title_index)
+                        for id in removed_ids]
+        print_table(removed_rows)
+
+    if len(remaining_ids) == 0:
+        error("No files with Doi remaining")
+
+    if bib_path.exists():
+        bib = bib_path.read_text()
+    else:
+        bib = ""
+
+    for id in remaining_ids:
+        entry = load_bibtex_cached(doi_lookup[id], reload_cache=reload)
+        bib = add_to_bib(entry, bib)
+
+    bib_path.write_text(bib)
 
 
 @cli.command()
@@ -374,6 +406,75 @@ def fd(pattern: str, regex: bool, no_wildcard: bool):
         print(f"{id}: {title_lookup[id]}")
         for hit in hits:
             print("\t", hit)
+
+
+def load_bibtex_cached(doi, reload_cache=False):
+    cache = load_doi_cache()
+    if reload_cache or doi not in cache:
+        try:
+            entry = cn.content_negotiation(ids=doi)
+        except Exception as e:
+            error("There was a problem contacting crossref:\n", str(e))
+
+        cache[doi] = entry
+        store_doi_cache(cache)
+    return cache[doi]
+
+
+def add_to_bib(entry, bib):
+    key = get_cite_key(entry)
+    if key in bib:
+        orig_key = key
+        num = 2
+        key = key + "_2"
+        while key in bib:
+            num += 1
+            key = orig_key + "_" + str(num)
+        entry = entry.replace(orig_key, key)
+
+    return bib + "\n\n" + entry
+
+
+def get_cite_key(entry):
+    start = entry.find("{")
+    end = entry.find(",")
+    return entry[start + 1: end]
+
+
+def get_bib_path(path):
+    if path is not None:
+        return Path(path)
+
+    files = list(Path().glob("*.bib"))
+    if len(files) > 0:
+        return files[0]
+    else:
+        return None
+
+
+
+def multipattern_to_ids(pattern, group, tags, config=None, state=None,
+        group_index=None, title_index=None, tags_index=None):
+    if len(pattern) == 0:
+        pattern = [""]
+    if len(pattern) == 1:
+        if pattern[0].isnumeric():
+            ids = pattern
+        else:
+            rows = filter_files(pattern[0], group, tags, group_index,
+                    title_index, tags_index)
+            ids = [row.id for row in rows]
+    else:
+        ids = []
+        config = config or load_config()
+        state = state or load_state()
+        title_index = title_index or load_title_index()
+        for pat in pattern:
+            path, int_id = parse_id(pat, Path(config.save_path), 
+                                    state, title_index)
+            ids.append(int_id)
+
+    return ids
 
 
 def get_hits(pattern: re.Pattern, body: str, context_len: int = 15):
@@ -509,10 +610,14 @@ def filter_files(pattern:str, group: str, tags: str,
     return rows
 
 
-def get_user_delete_confirmation(rows):
-    print("Do you really wanna delete the following files?\n")
+def print_table(rows):
     print(tabulate(list(sorted(rows, key=lambda x: x[3], reverse=True)),
                    'id title group last_edit'.split()))
+
+
+def get_user_delete_confirmation(rows):
+    print("Do you really wanna delete the following files?\n")
+    print_table(rows)
     print()
     return query_value("Delete? y/n: ", None, t.identity, 
                        lambda x: x in "yn", "") == 'y'
@@ -535,12 +640,14 @@ def delete_md(id: str, config: AttrDict):
 
 
 def update_index_files_as_necessary(title: str, tags: Set[str], 
-                                    group: str, id: int):
+        group: str, doi: str, id: int):
     group_index = load_group_index()
     title_index = load_title_index()
     tag_index = load_tag_index()
+    doi_index = load_doi_index()
     old_title = find_id_in_single_index(title_index, id)
     old_group = find_id_in_single_index(group_index, id)
+    old_doi = find_id_in_single_index(doi_index, id)
     old_tags = find_id_in_multi_index(tag_index, id)
 
     if title != old_title:
@@ -549,6 +656,9 @@ def update_index_files_as_necessary(title: str, tags: Set[str],
     if tags != old_tags:
         store_tag_index(update_multi_index(tag_index, tags, 
                                            old_tags, id))
+    if doi != old_doi:
+        store_doi_index(update_single_index(doi_index, doi, 
+                                            old_doi, id))
     if group != old_group:
         store_group_index(update_single_index(group_index, group, 
                                               old_group, id))
@@ -572,6 +682,8 @@ def edit_externally(path: Path, config: AttrDict, render_html:
 
 
 def remove_index_entry(index: Index , entry: str, id: Union[int, str]) -> Index:
+    if entry is None:
+        return index
     try:
         if len(index[entry]) == 1:
             return t.dissoc(index, entry)
@@ -622,7 +734,8 @@ def parse_file(content: str) -> Tuple[str, Set[str], str]:
     tags = t.thread_last(tag_pattern.findall(content),
                        (map, str.lower),
                        (set))
-    return front_matter.title, tags, front_matter.group
+    return front_matter.title, tags, front_matter.group,\
+            front_matter.get("doi", None)
 
 
 def assert_front_matter_correct(front_matter: str):
@@ -671,6 +784,7 @@ def assert_new_file_does_not_exist(p: Path):
         exit(1)
 
 
+@lru_cache(2)
 def load_config() -> AttrDict:
     if config_path.exists():
         return AttrDict(yaml.safe_load(config_path.read_text()))
@@ -725,8 +839,8 @@ def query_value(msg: str, default: str, transform: Callable,
             print(e, file=sys.stderr)
 
 
-def make_path_func(file_name: str) -> PathFunc:
-    return lambda: Path(load_config().save_path, file_name + '.yaml')
+def make_path_func(file_name: str, ending: str = ".yaml") -> PathFunc:
+    return lambda: Path(load_config().save_path, file_name + ending)
 
 
 def load(pf: PathFunc, default: Callable[[], Any] = AttrDict)\
@@ -743,16 +857,34 @@ def store(pf: PathFunc, index: Index) -> None:
     pf().write_text(yaml.dump(dict(index)))
 
 
+def load_doi_cache():
+    p = doi_cache_path()
+    if not p.exists():
+        return {}
+
+    with p.open('rb') as f:
+        return pickle.load(f)
+
+
+def store_doi_cache(cache):
+    with doi_cache_path().open('wb') as f:
+        return pickle.dump(cache, f)
+
+
 title_idx_path = make_path_func('title_index')
 tag_idx_path = make_path_func('tag_index')
 group_idx_path = make_path_func('group_index')
+doi_idx_path = make_path_func('doi_index')
+doi_cache_path = make_path_func('doi_cache', '.pkl')
 state_path = make_path_func('state')
 load_title_index = t.partial(load, title_idx_path)
 load_tag_index = t.partial(load, tag_idx_path)
 load_group_index = t.partial(load, group_idx_path)
+load_doi_index = t.partial(load, doi_idx_path)
 store_title_index = store(title_idx_path)
 store_tag_index = store(tag_idx_path)
 store_group_index = store(group_idx_path)
+store_doi_index = store(doi_idx_path)
 save_state = store(state_path)
 load_state = t.partial(load, state_path, 
                        lambda: AttrDict(default_state))
