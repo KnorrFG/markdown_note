@@ -217,7 +217,7 @@ def edit(id: str):
     save_state(t.assoc(state, 'last_edited', int_id))
     content = path.read_text()
     title, tags, group, doi = parse_file(content)
-    update_index_files_as_necessary(title, tags, group, int_id, doi)
+    update_index_files_as_necessary(title, tags, group, doi, int_id)
     render_html(content) 
 
 
