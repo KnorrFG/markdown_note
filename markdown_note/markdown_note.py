@@ -11,6 +11,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Set, Tuple, Union
 
+import bibtexparser
 import click
 import markdown
 import toolz as t
@@ -42,6 +43,15 @@ new_md_template = '''---
 title: None
 group: None
 ---
+'''
+
+doi_template = '''---
+title: {}
+doi: {}
+group: None
+---
+# {}
+<{}>
 '''
 
 special_id_mappings = {
@@ -157,7 +167,10 @@ def regenerate():
 
 @cli.command()
 @click.option('--template', '-t', default=None, type=Path)
-def new(template: Path):
+@click.option('--doi', '-d', default=None)
+@click.option('--reload', '-r', is_flag=True, 
+              help="specify to reload the doi cache")
+def new(template: Path, doi: str, reload: bool):
     '''creates a new note'''
     save_path = Path(load_config().save_path)
     state = load_state()
@@ -165,7 +178,14 @@ def new(template: Path):
     md_folder.mkdir(755, True, True)
     new_file_path =  md_folder / f'{state.next_index}.md'
     assert_new_file_does_not_exist(new_file_path)
-    template = template.read_text() if template else new_md_template
+    if doi is not None:
+        bibtex = load_bibtex_cached(doi, reload)
+        title, author, link = get_title_author_and_link(bibtex)
+        template = doi_template.format(author, doi, title, link)
+    elif template is not None:
+        template = template.read_text()
+    else:
+        template = new_md_template
     new_file_path.write_text(template)
     t.thread_first(state,
         (t.assoc, 'next_index', state.next_index + 1),
@@ -406,6 +426,34 @@ def fd(pattern: str, regex: bool, no_wildcard: bool):
         print(f"{id}: {title_lookup[id]}")
         for hit in hits:
             print("\t", hit)
+
+
+def get_title_author_and_link(bibtex: str):
+    info = bibtexparser.loads(bibtex).entries[0]
+    title = info["title"]
+    author_short = short_description(info["author"])
+    year = info["year"]
+    link = info["url"]
+    return title, f"{author_short} {year}", link
+
+
+def short_description(authors):
+    """gets a short description from a list of authors"""
+    authors_list = authors.split(" and ")
+    def get_last_name(name): return name.split()[-1]
+
+    l = len(authors_list)
+    if l == 0:
+        error("Cant parse authors string:\n" + authors)
+    elif l == 1:
+        return get_last_name(authors_list[0])
+    elif l == 2:
+        a = get_last_name(authors_list[0])
+        b = get_last_name(authors_list[1])
+        return f"{a} & {b}"
+    else:
+        return f"{get_last_name(authors_list[0])} et al."
+
 
 
 def load_bibtex_cached(doi, reload_cache=False):
