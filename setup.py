@@ -1,8 +1,9 @@
 from distutils.core import setup
 
-packages = ['markdown_note', 'markdown_note.resources']
+packages = ['markdown_note', 'markdown_note.resources', 'markdown_note.flaskr']
 install_requires = ["markdown", "pyyaml", "toolz", "yattag", "click", "attrdict",
-                    "tqdm", 'tabulate', 'habanero', "bibtexparser"]
+                    "tqdm", 'tabulate', 'habanero', "bibtexparser",
+                    "flask", "eventlet", "flask-socketio"]
 
 setup(name='Markdown Note',
       version='0.3',

@@ -1,1 +1,4 @@
-include markdown_note/resources/default.css
+graft markdown_note/resources/
+graft markdown_note/flaskr/static
+graft markdown_note/flaskr/templates
+global-exclude *.pyc
