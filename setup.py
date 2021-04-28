@@ -15,7 +15,7 @@ setup(name='Markdown Note',
         'console_scripts': ['mdn=markdown_note.markdown_note:cli']
       },
       include_package_data=True,
-      python_requires='>=3.7')
+      python_requires='>=3.8')
 
 # Changelog sinc last commit 
 #   remove fuzzy matcher which just behaved badly
