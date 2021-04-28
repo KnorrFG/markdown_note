@@ -14,6 +14,7 @@ config = c.load_config()
 asset_dir = Path(config.save_path) / "assets"
 
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app)
 
@@ -52,12 +53,17 @@ def get_notes(pattern, group, tags):
 
 @socketio.event
 def get_note(id):
-    html = c.html_path(id, config).read_text()
-    start = html.find("<body>")
+    htmlpath = c.html_path(id, config)
+    path = c.md_path(id, config)
+    if (not htmlpath.exists()) or htmlpath.stat().st_mtime < path.stat().st_mtime:
+        htmlpath.write_text(c.make_html(path.read_text()))
+    html = htmlpath.read_text()
+    search_str = '<body class="body">'
+    start = html.find(search_str)
     assert start != -1
     end = html.find("</body>")
     assert end != -1
-    emit("note", html[start + 6: end])
+    emit("note", html[start + len(search_str): end])
 
 
 def run():

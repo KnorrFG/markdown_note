@@ -5,20 +5,35 @@
   z-index: 1; /* Stay on top */
   top: 0; /* Stay at the top */
   left: 0;
-  background-color: gray; 
+  background-color: CornflowerBlue; 
   overflow-x: hidden; /* Disable horizontal scroll */
   padding-top: 20px;
-	padding: 10px;
+  padding: 10px;
+}
+
+#sidebar > input {
+    /*this makes input tags behave sanely, I dont know why this isnt the default*/
+    -webkit-box-sizing: border-box; /* Safari/Chrome, other WebKit */
+    -moz-box-sizing: border-box;
+    margin-bottom: 5px;
 }
 
 #main {
-  padding: 0px 10px;
+    margin-left: 250px;
+    padding: 0px 10px;
+    margin-left: 260px;
 }
 
 #sidebar > * {
-	width: 100%;
+    width: 100%;
 }
 
 #notes {
-	height: 80%;
+    margin-top: 10px;
+	height: 70%;
+}
+
+#title {
+    font-size: 20pt;
+    font-style: bold;
 }

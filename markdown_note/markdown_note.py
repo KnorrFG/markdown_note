@@ -156,7 +156,7 @@ def show_one(id: str):
                             c.load_title_index())
     
     htmlpath = c.html_path(int_id, config)
-    if htmlpath.stat().st_mtime < path.stat().st_mtime:
+    if not htmlpath.exists() or htmlpath.stat().st_mtime < path.stat().st_mtime:
         htmlpath.write_text(c.make_html(path.read_text()))
     try:
         sp.Popen(config.browser_cmd.format(htmlpath), shell=True)
