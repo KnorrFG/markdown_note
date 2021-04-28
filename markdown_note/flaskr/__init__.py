@@ -66,5 +66,5 @@ def get_note(id):
     emit("note", html[start + len(search_str): end])
 
 
-def run():
-    socketio.run(app)
+def run(port):
+    socketio.run(app, port=port)

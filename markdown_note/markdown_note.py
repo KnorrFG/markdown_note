@@ -357,6 +357,10 @@ def fd(pattern: str, regex: bool, no_wildcard: bool):
 
 
 @cli.command()
-def serve():
+@click.option("--port", "-p", default=5000, type=int)
+def serve(port):
+    """launches a webserver on localhost:5000 to read notes"""
     from . import flaskr
-    flaskr.run()
+    import webbrowser
+    webbrowser.open_new(f'http://127.0.0.1:{port}/')
+    flaskr.run(port)
