@@ -491,7 +491,7 @@ def load_config() -> AttrDict:
     if config_path.exists():
         return AttrDict(yaml.safe_load(config_path.read_text()))
     config = query_config()
-    config_path.parent.mkdir(755, True, True)
+    config_path.parent.mkdir(0o755, True, True)
     config_path.write_text(yaml.dump(t.valmap(str, config)))
     return config
 

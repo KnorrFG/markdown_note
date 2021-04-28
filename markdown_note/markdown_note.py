@@ -102,7 +102,7 @@ def new(template: Path, doi: str, reload: bool):
     save_path = Path(c.load_config().save_path)
     state = c.load_state()
     md_folder = save_path / 'md' 
-    md_folder.mkdir(755, True, True)
+    md_folder.mkdir(0o755, True, True)
     new_file_path =  md_folder / f'{state.next_index}.md'
     c.assert_new_file_does_not_exist(new_file_path)
     if doi is not None:
@@ -134,7 +134,7 @@ def edit(id: str):
     path, int_id = c.parse_id(id, Path(c.load_config().save_path), state, 
                             c.load_title_index())
     htmlpath = c.html_path(int_id, config)
-    htmlpath.parent.mkdir(755, True, True)
+    htmlpath.parent.mkdir(0o755, True, True)
 
     def render_html(content):
         htmlpath.write_text(c.make_html(content))
@@ -250,7 +250,7 @@ def aa(target, save_path):
     '''Add Asset
     Coppies target to asset-folder/save-path'''
     abs_save_path = Path(c.load_config().save_path, 'assets', save_path)
-    abs_save_path.parent.mkdir(755, True, True)
+    abs_save_path.parent.mkdir(0o755, True, True)
     shutil.copyfile(target, abs_save_path)
    
 
