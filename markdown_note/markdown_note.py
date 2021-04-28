@@ -122,7 +122,7 @@ def new(template: Path, doi: str, reload: bool):
                       'None', state.next_index))
     c.store_title_index(c.insert_index_entry(c.load_title_index(), 
                       'None', state.next_index))
-    sp.run(f'mdn -c {config_path} edit', shell=True)
+    sp.run(f'mdn -c {c.config_path} edit', shell=True)
 
 
 @cli.command()
