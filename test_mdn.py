@@ -1,8 +1,8 @@
 import pytest
 
-from markdown_note.markdown_note import (insert_index_entry, parse_file,
-                                         remove_index_entry, strip_lines,
-                                         update_multi_index)
+from markdown_note.core import (insert_index_entry, parse_file,
+                                remove_index_entry, strip_lines,
+                                update_multi_index)
 from markdown_note.tag_string_parser import (ParserError,
                                              create_predicate_from_tag_str)
 

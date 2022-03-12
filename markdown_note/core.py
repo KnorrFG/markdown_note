@@ -14,13 +14,13 @@ import bibtexparser
 import markdown
 import toolz as t
 import yaml
-from attrdict import AttrDict
 from habanero import cn
 from tabulate import tabulate
 from yattag import Doc
 
 from . import resources as res
 from .tag_string_parser import ParserError, create_predicate_from_tag_str
+from .attrdict import AttrDict
 
 PathFunc =  Callable[[], Path]
 Index = Dict[str, Set[int]]
