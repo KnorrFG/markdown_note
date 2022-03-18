@@ -27,7 +27,6 @@ group: None
 <{}>
 '''
 
-
 @click.group()
 @click.option("--config-file-path", "-c", type=Path, default=None)
 def cli(config_file_path: Path):
@@ -95,9 +94,14 @@ def regenerate():
 @cli.command()
 @click.option('--template', '-t', default=None, type=Path)
 @click.option('--doi', '-d', default=None)
+@click.option('--pdf', '-p', default=None, type=Path,
+        help="attach PDF to note to be copied into assets")
+@click.option('--pdf-asset-path', '-P', type=Path, default=None,
+        help="path relative to asset dir, where the pdf should be stored")
 @click.option('--reload', '-r', is_flag=True, 
               help="specify to reload the doi cache")
-def new(template: Path, doi: str, reload: bool):
+def new(template: Path, doi: str, pdf: Path, pdf_asset_path: Path, 
+        reload: bool):
     '''creates a new note'''
     save_path = Path(c.load_config().save_path)
     state = c.load_state()
@@ -113,6 +117,8 @@ def new(template: Path, doi: str, reload: bool):
         template = template.read_text()
     else:
         template = new_md_template
+
+    template += c.get_pdf_template(pdf, pdf_asset_path)
     new_file_path.write_text(template)
     t.thread_first(state,
         (t.assoc, 'next_index', state.next_index + 1),
