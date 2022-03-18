@@ -1,4 +1,5 @@
 import os
+import shutil
 import pickle
 import re
 import subprocess as sp
@@ -44,6 +45,13 @@ default_state = {
     'last_created': None,
     'last_shown': None
 }
+
+
+pdf_template = '''
+<object data="{pdfname}" type="application/pdf" width="100%" height="500px">
+    <embed src="{pdfname}" />
+</object>
+'''
 
 
 def error(msg: str):
@@ -571,6 +579,24 @@ def load_doi_cache():
 def store_doi_cache(cache):
     with doi_cache_path().open('wb') as f:
         return pickle.dump(cache, f)
+
+
+def get_pdf_template(pdf: Path, pdf_res_path: Path):
+    if pdf is not None:
+        asset_dir = Path(load_config().save_path) / 'assets'
+        if pdf_res_path is None:
+            abs_save_path =  asset_dir / pdf.name
+        else:
+            abs_save_path = asset_dir / pdf_res_path
+        if not abs_save_path.exists():
+            abs_save_path.parent.mkdir(exist_ok=True, parents=True)
+            shutil.copyfile(pdf.expanduser(), abs_save_path)
+        else:
+            print('asset directory already contains file: '+str(abs_save_path))
+            exit()
+        return pdf_template.format(pdfname=abs_save_path.relative_to(asset_dir))
+    else:
+        return ""
 
 
 title_idx_path = make_path_func('title_index')
