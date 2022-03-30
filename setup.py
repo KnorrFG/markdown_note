@@ -6,7 +6,7 @@ install_requires = ["markdown", "pyyaml", "toolz", "yattag", "click",
                     "flask", "eventlet", "flask-socketio"]
 
 setup(name='Markdown Note',
-      version='0.4.0',
+      version='0.4.1',
       author='Felix G. Knorr',
       author_email='knorr.felix@gmx.de',
       packages=packages,

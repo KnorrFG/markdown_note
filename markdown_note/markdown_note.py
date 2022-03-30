@@ -55,8 +55,7 @@ def cli(config_file_path: Path):
     files.
     '''
     if config_file_path is not None:
-        global config_path
-        config_path = config_file_path
+        c.config_path = config_file_path
     
 
 @cli.command()
