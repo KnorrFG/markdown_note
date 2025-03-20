@@ -3,7 +3,7 @@ Markdown note is a command line tool to write notes in markdown using your
 favorite text editor, which can then be viewed in a browser as html. The html
 also is rendered every time you save while editing the note. Additionally it
 has some light weight bibliography management features. For more details, read
-my [article](https://knorrfg.github.io/mdn)
+my [article](https://felix-knorr.net/posts/2021-04-28-mdn.html)
 
 All Notes are stored as plaintext files in the directory that you provide
 as save-path in the configuration file ~/.mdnrc which will be
